@@ -724,7 +724,42 @@ def create_spreadsheet(title: str, ctx: Context = None) -> Dict[str, Any]:
     drive_service = ctx.request_context.lifespan_context.drive_service
     folder_id = ctx.request_context.lifespan_context.folder_id
     
-    # Create the spreadsheet using Sheets API
+    # If folder_id is specified, create the spreadsheet directly in that folder using Drive API
+    if folder_id:
+        try:
+            # Create spreadsheet using Drive API with correct parent folder
+            file_metadata = {
+                'name': title,
+                'mimeType': 'application/vnd.google-apps.spreadsheet',
+                'parents': [folder_id]
+            }
+            
+            file = drive_service.files().create(
+                body=file_metadata,
+                fields='id,name,parents'
+            ).execute()
+            
+            spreadsheet_id = file.get('id')
+            print(f"Spreadsheet created with ID: {spreadsheet_id} in folder: {folder_id}")
+            
+            # Now get the full spreadsheet details using Sheets API
+            spreadsheet = sheets_service.spreadsheets().get(
+                spreadsheetId=spreadsheet_id,
+                fields='spreadsheetId,properties,sheets'
+            ).execute()
+            
+            return {
+                'spreadsheetId': spreadsheet_id,
+                'title': spreadsheet.get('properties', {}).get('title', title),
+                'sheets': [sheet.get('properties', {}).get('title', 'Sheet1') for sheet in spreadsheet.get('sheets', [])],
+                'folder': folder_id
+            }
+            
+        except Exception as e:
+            print(f"Error creating spreadsheet in folder: {e}")
+            print("Falling back to standard creation method...")
+    
+    # Fallback: Create the spreadsheet using Sheets API (original method)
     spreadsheet_body = {
         'properties': {
             'title': title
@@ -740,7 +775,7 @@ def create_spreadsheet(title: str, ctx: Context = None) -> Dict[str, Any]:
     spreadsheet_id = spreadsheet.get('spreadsheetId')
     print(f"Spreadsheet created with ID: {spreadsheet_id}")
     
-    # If a folder_id is specified, move the spreadsheet to that folder
+    # If a folder_id is specified, try to move the spreadsheet to that folder
     if folder_id:
         try:
             # Get the current parents
